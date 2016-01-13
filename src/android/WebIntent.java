@@ -1,5 +1,8 @@
 package com.borismus.webintent;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -8,6 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.text.Html;
@@ -20,13 +24,13 @@ import org.apache.cordova.PluginResult;
 /**
  * WebIntent is a PhoneGap plugin that bridges Android intents and web
  * applications:
- * 
+ *
  * 1. web apps can spawn intents that call native Android applications. 2.
  * (after setting up correct intent filters for PhoneGap applications), Android
  * intents can be handled by PhoneGap web applications.
- * 
+ *
  * @author boris@borismus.com
- * 
+ *
  */
 public class WebIntent extends CordovaPlugin {
 
@@ -34,7 +38,7 @@ public class WebIntent extends CordovaPlugin {
 
     //public boolean execute(String action, JSONArray args, String callbackId) {
     @Override
-    public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
+    public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) {
         try {
 
             if (action.equals("startActivity")) {
@@ -85,15 +89,35 @@ public class WebIntent extends CordovaPlugin {
                     callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.INVALID_ACTION));
                     return false;
                 }
-                Intent i = ((CordovaActivity)this.cordova.getActivity()).getIntent();
-                String extraName = args.getString(0);
-                if (i.hasExtra(extraName)) {
-                    String r = i.getStringExtra(extraName);
-                    if (null == r) {
-                        r = ((Uri) i.getParcelableExtra(extraName)).toString();
-                    }
 
-                    callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, r));
+                final Intent i = cordova.getActivity().getIntent();
+                final String extraName = args.getString(0);
+
+                if (i.hasExtra(extraName)) {
+                    cordova.getThreadPool().execute(new Runnable() {
+                        public void run() {
+                                String r = i.getStringExtra(extraName);
+                                if (null == r) {
+                                    r = ((Uri) i.getParcelableExtra(extraName)).toString();
+                                }
+
+                                Context context = cordova.getActivity().getApplicationContext();
+                                File outputDir = context.getCacheDir();
+                                String fileType = "." + i.getType().split("/")[1];
+
+                                try {
+                                    File outputFile = File.createTempFile("webintent", fileType, outputDir);
+                                    FileOutputStream outputStream = new FileOutputStream(outputFile);
+                                    CordovaResourceApi resourceApi = webView.getResourceApi();
+                                    resourceApi.copyResource(Uri.parse(r), outputStream);
+                                    r = outputFile.toURI().toString();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+
+                                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, r));
+                        }
+                    });
                     return true;
                 } else {
                     //return new PluginResult(PluginResult.Status.ERROR);
